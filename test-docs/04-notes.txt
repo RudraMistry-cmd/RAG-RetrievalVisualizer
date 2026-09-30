@@ -1,0 +1,9 @@
+Project notes for the demo presentation
+========================================
+
+- Ingestion: extract text -> split into parents/children -> embed -> store.
+- Retrieval: embed the query, vector-search top-k, rerank with a cross-encoder.
+- Generation: build deduplicated parent context and call the LLM.
+
+Reminder: show the before/after rerank movement, and the final assembled
+context, so the audience can trace exactly how the answer was grounded.
