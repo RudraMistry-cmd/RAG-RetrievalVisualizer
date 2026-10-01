@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { api } from '../api/client.js'
+import Markdown from '../components/Markdown.jsx'
 
 export default function RetrievalInspectorView({ document, documentId, pipelineState, setPipelineState, onResetQuery, onDone }) {
   const [queryInput, setQueryInput] = useState(pipelineState.query || '')
@@ -235,7 +236,7 @@ export default function RetrievalInspectorView({ document, documentId, pipelineS
       {generation && (
         <div className="panel">
           <h3>Final Answer</h3>
-          <div className="answer-box">{generation.answer}</div>
+          <div className="answer-box"><Markdown text={generation.answer} /></div>
           <div style={{ marginTop: 16 }}>
             <button className="primary" onClick={onDone}>
               View Full Pipeline Summary →

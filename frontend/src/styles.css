@@ -654,6 +654,27 @@ button.secondary.active {
   word-break: break-word;
 }
 
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p { margin: 0 0 12px; }
+.md h4, .md h5, .md h6 { margin: 16px 0 8px; line-height: 1.3; }
+.md ul, .md ol { margin: 0 0 12px; padding-left: 24px; }
+.md li { margin-bottom: 6px; }
+.md code {
+  background: var(--panel);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 0.9em;
+}
+.md pre {
+  background: var(--panel);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  overflow-x: auto;
+  margin: 0 0 12px;
+}
+.md pre code { background: none; padding: 0; }
+
 .detail-panel p {
   overflow-wrap: anywhere;
   word-break: break-word;

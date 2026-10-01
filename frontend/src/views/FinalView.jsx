@@ -1,4 +1,5 @@
 import React from 'react'
+import Markdown from '../components/Markdown.jsx'
 
 export default function FinalView({ document, pipelineState, onNewQuery }) {
   const { query, retrieval, reranking, context, generation } = pipelineState
@@ -55,7 +56,7 @@ export default function FinalView({ document, pipelineState, onNewQuery }) {
 
       <div className="panel">
         <h3>Answer</h3>
-        <div className="answer-box">{generation.answer}</div>
+        <div className="answer-box"><Markdown text={generation.answer} /></div>
         <p style={{ color: 'var(--text-dim)', fontSize: 13, marginTop: 12 }}>
           Model: {generation.model}
         </p>
