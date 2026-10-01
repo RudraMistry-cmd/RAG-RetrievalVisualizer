@@ -47,7 +47,7 @@ def _stage_error(stage: str, exc: Exception, status: int = 500):
 # ---------- Ingestion ----------
 
 @app.post("/api/ingest")
-async def ingest(file: UploadFile = File(...)):
+def ingest(file: UploadFile = File(...)):
     os.makedirs(config.UPLOAD_DIR, exist_ok=True)
     temp_name = f"{uuid.uuid4()}_{file.filename}"
     temp_path = os.path.join(config.UPLOAD_DIR, temp_name)
