@@ -8,6 +8,7 @@ brief: this project is about retrieval, not LLM orchestration.
 import requests
 
 from app import config
+from app.inference_queue import inference_queue
 
 
 class GenerationError(Exception):
@@ -21,7 +22,7 @@ SYSTEM_PROMPT = (
 )
 
 
-def generate_answer(question: str, context: str) -> str:
+def _generate_answer_impl(question: str, context: str) -> str:
     url = f"{config.OLLAMA_BASE_URL}/api/chat"
     payload = {
         "model": config.LLM_MODEL,
@@ -51,3 +52,8 @@ def generate_answer(question: str, context: str) -> str:
     if not content:
         raise GenerationError(f"Ollama returned no content: {data}")
     return content
+
+
+def generate_answer(question: str, context: str) -> str:
+    """Serialized through the inference queue to avoid concurrent VRAM use."""
+    return inference_queue.run(_generate_answer_impl, question, context)

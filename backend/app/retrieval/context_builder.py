@@ -1,4 +1,4 @@
-"""
+﻿"""
 Stage: SELECTED CHILDREN -> PARENT LOOKUP -> DEDUPLICATION -> CONTEXT ASSEMBLY
 
 Takes the reranked, top-N child chunks and resolves them to their parent
@@ -10,7 +10,7 @@ from typing import List
 from app.store import sqlite_store as store
 
 
-def build_context(selected_children: List[dict]) -> dict:
+def build_context(selected_children: List[dict], session_id: str = None) -> dict:
     """
     selected_children: the post-rerank, top-N list (each dict has at
     least 'parent_id', 'child_id').
@@ -22,13 +22,13 @@ def build_context(selected_children: List[dict]) -> dict:
     context string ready to hand to the LLM.
     """
     parent_ids_in_order = [c["parent_id"] for c in selected_children]
-    parents = store.get_parents_by_ids(parent_ids_in_order)
+    parents = store.get_parents_by_ids(parent_ids_in_order, session_id=session_id)
 
     # Multiple parents may come from different documents; resolve each
     # document id to its filename for the "Source:" header.
     source_filenames = {
         d["id"]: d["filename"]
-        for d in store.get_documents_by_ids([p["document_id"] for p in parents])
+        for d in store.get_documents_by_ids([p["document_id"] for p in parents], session_id=session_id)
     }
 
     blocks = []
@@ -38,7 +38,8 @@ def build_context(selected_children: List[dict]) -> dict:
             header += f", Page: {p['page_number']}"
         blocks.append(f"{header}\n\n{p['text']}")
 
-    assembled = "\n\n────────────────────\n\n".join(blocks)
+    separator = "\n\n" + ("-" * 40) + "\n\n"
+    assembled = separator.join(blocks)
 
     return {
         "parents_used": [

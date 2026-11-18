@@ -1,4 +1,18 @@
-const BASE_URL = 'http://localhost:8000'
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
+
+function getSessionId() {
+  const key = 'rag_session_id'
+  try {
+    let id = localStorage.getItem(key)
+    if (!id) {
+      id = (crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`)
+      localStorage.setItem(key, id)
+    }
+    return id
+  } catch {
+    return 'anonymous'
+  }
+}
 
 class ApiError extends Error {
   constructor(stage, message, status) {
@@ -11,9 +25,16 @@ class ApiError extends Error {
 async function request(path, options = {}) {
   let resp
   try {
+    const isForm = options.body instanceof FormData
+    const headers = {
+      ...(isForm ? {} : { 'Content-Type': 'application/json' }),
+      'ngrok-skip-browser-warning': 'true',
+      'X-Session-Id': getSessionId(),
+      ...(options.headers || {}),
+    }
     resp = await fetch(`${BASE_URL}${path}`, {
-      headers: options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' },
       ...options,
+      headers,
     })
   } catch (e) {
     throw new ApiError('network', `Could not reach backend at ${BASE_URL}. Is it running?`, 0)

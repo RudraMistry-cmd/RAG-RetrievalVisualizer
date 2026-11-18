@@ -12,13 +12,13 @@ from app.store import sqlite_store as store
 from app import config
 
 
-def retrieve(document_id: Optional[str], query: str, top_k: int = None) -> dict:
-    """document_id=None searches across all stored documents."""
+def retrieve(document_id: Optional[str], query: str, top_k: int = None, session_id: str = None) -> dict:
+    """document_id=None searches across all stored documents in the session."""
     top_k = top_k or config.TOP_K
 
     query_embedding = embed_text(query)
 
-    results = store.vector_search(document_id, query_embedding, top_k)
+    results = store.vector_search(document_id, query_embedding, top_k, session_id=session_id)
 
     return {
         "query": query,

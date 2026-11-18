@@ -1,4 +1,4 @@
-"""
+﻿"""
 RAG Visualizer backend — FastAPI app.
 
 Endpoints are split by pipeline stage so the frontend's Retrieval
@@ -13,7 +13,7 @@ import os
 import shutil
 import uuid
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
@@ -44,13 +44,19 @@ def _stage_error(stage: str, exc: Exception, status: int = 500):
     raise HTTPException(status_code=status, detail={"stage": stage, "message": str(exc)})
 
 
+def _session_id(request: Request) -> Optional[str]:
+    sid = request.headers.get("X-Session-Id", "").strip()
+    return sid or None
+
+
 # ---------- Ingestion ----------
 
 @app.post("/api/ingest")
-def ingest(file: UploadFile = File(...)):
+def ingest(request: Request, file: UploadFile = File(...)):
     os.makedirs(config.UPLOAD_DIR, exist_ok=True)
     temp_name = f"{uuid.uuid4()}_{file.filename}"
     temp_path = os.path.join(config.UPLOAD_DIR, temp_name)
+    sid = _session_id(request)
 
     try:
         with open(temp_path, "wb") as f:
@@ -59,7 +65,7 @@ def ingest(file: UploadFile = File(...)):
         _stage_error("upload", e, status=400)
 
     try:
-        result = pipeline.ingest_document(temp_path, file.filename)
+        result = pipeline.ingest_document(temp_path, file.filename, session_id=sid)
         return result
     except ExtractionError as e:
         _stage_error("extract_text", e, status=422)
@@ -72,32 +78,32 @@ def ingest(file: UploadFile = File(...)):
 
 
 @app.get("/api/documents")
-def list_documents():
-    return store.list_documents()
+def list_documents(request: Request):
+    return store.list_documents(session_id=_session_id(request))
 
 
 @app.delete("/api/documents/{document_id}")
-def delete_document(document_id: str):
-    if not store.delete_document(document_id):
+def delete_document(document_id: str, request: Request):
+    if not store.delete_document(document_id, session_id=_session_id(request)):
         raise HTTPException(status_code=404, detail=f"No document with id {document_id}")
     return {"deleted": document_id}
 
 
 @app.get("/api/documents/{document_id}/structure")
-def document_structure(document_id: str):
+def document_structure(document_id: str, request: Request):
     try:
-        return store.get_document_structure(document_id)
+        return store.get_document_structure(document_id, session_id=_session_id(request))
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
 
 @app.get("/api/documents/{document_id}/extraction")
-def document_extraction(document_id: str):
+def document_extraction(document_id: str, request: Request):
     """Raw per-page extracted text (text layer and/or OCR) — lets the UI
     show exactly what was pulled out of the document, and which pages
     were OCR'd."""
     try:
-        return store.get_document_pages(document_id)
+        return store.get_document_pages(document_id, session_id=_session_id(request))
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -111,9 +117,9 @@ class RetrieveRequest(BaseModel):
 
 
 @app.post("/api/retrieve")
-def retrieve(req: RetrieveRequest):
+def retrieve(req: RetrieveRequest, request: Request):
     try:
-        return pipeline.stage_retrieve(req.document_id, req.query, req.top_k)
+        return pipeline.stage_retrieve(req.document_id, req.query, req.top_k, session_id=_session_id(request))
     except ValueError as e:
         _stage_error("retrieve", e, status=404)
     except EmbeddingError as e:
@@ -140,9 +146,9 @@ class BuildContextRequest(BaseModel):
 
 
 @app.post("/api/build-context")
-def build_context(req: BuildContextRequest):
+def build_context(req: BuildContextRequest, request: Request):
     try:
-        return pipeline.stage_build_context(req.document_id, req.selected_children)
+        return pipeline.stage_build_context(req.document_id, req.selected_children, session_id=_session_id(request))
     except ValueError as e:
         _stage_error("build_context", e, status=404)
 
@@ -170,9 +176,9 @@ class FullQueryRequest(BaseModel):
 
 
 @app.post("/api/query/full")
-def query_full(req: FullQueryRequest):
+def query_full(req: FullQueryRequest, request: Request):
     try:
-        return pipeline.run_full_query(req.document_id, req.query, req.top_k, req.top_n)
+        return pipeline.run_full_query(req.document_id, req.query, req.top_k, req.top_n, session_id=_session_id(request))
     except ValueError as e:
         _stage_error("retrieve", e, status=404)
     except EmbeddingError as e:

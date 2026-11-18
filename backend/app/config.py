@@ -39,4 +39,6 @@ SQLITE_PATH = os.path.join(DATA_DIR, "rag.db")
 UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 
 # --- Server ---
-CORS_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+CORS_ORIGINS = [
+    "*"
+]

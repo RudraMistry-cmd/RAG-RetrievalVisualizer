@@ -19,6 +19,7 @@ as being on the same axis.
 from typing import List
 
 from app import config
+from app.inference_queue import inference_queue
 
 _model = None
 
@@ -46,15 +47,7 @@ def _get_model():
     return _model
 
 
-def rerank(query: str, candidates: List[dict], top_n: int = None) -> dict:
-    """
-    candidates: list of dicts as produced by retriever.retrieve()'s
-    "candidates" list (must contain 'text', 'child_id', 'parent_id',
-    'similarity', 'page_number').
-
-    Returns both the original order and the reranked order so the
-    frontend can render a visual before/after comparison.
-    """
+def _rerank_impl(query: str, candidates: List[dict], top_n: int = None) -> dict:
     top_n = top_n or config.RERANK_TOP_N
     if not candidates:
         return {"query": query, "before": [], "after": []}
@@ -97,3 +90,16 @@ def rerank(query: str, candidates: List[dict], top_n: int = None) -> dict:
         "after": after[:top_n] if top_n else after,
         "after_full": after,  # full reranked list, in case UI wants to show all before truncation
     }
+
+
+def rerank(query: str, candidates: List[dict], top_n: int = None) -> dict:
+    """
+    candidates: list of dicts as produced by retriever.retrieve()'s
+    "candidates" list (must contain 'text', 'child_id', 'parent_id',
+    'similarity', 'page_number').
+
+    Returns both the original order and the reranked order so the
+    frontend can render a visual before/after comparison.
+    Serialized through the inference queue to avoid concurrent VRAM use.
+    """
+    return inference_queue.run(_rerank_impl, query, candidates, top_n)

@@ -1,4 +1,4 @@
-import React from 'react'
+﻿import React from 'react'
 import Markdown from '../components/Markdown.jsx'
 
 export default function FinalView({ document, pipelineState, onNewQuery }) {

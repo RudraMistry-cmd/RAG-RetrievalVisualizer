@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+﻿import React, { useState, useEffect, useRef } from 'react'
 import { api } from '../api/client.js'
 import Markdown from '../components/Markdown.jsx'
 
@@ -128,7 +128,7 @@ export default function RetrievalInspectorView({ document, documentId, pipelineS
         <div className="query-row">
           <input
             type="text"
-            placeholder="Ask a question about the document…"
+            placeholder="Ask a question about the document..."
             value={queryInput}
             onChange={(e) => setQueryInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && runRetrieve()}
@@ -239,7 +239,7 @@ export default function RetrievalInspectorView({ document, documentId, pipelineS
           <div className="answer-box"><Markdown text={generation.answer} /></div>
           <div style={{ marginTop: 16 }}>
             <button className="primary" onClick={onDone}>
-              View Full Pipeline Summary →
+              View Full Pipeline Summary
             </button>
           </div>
         </div>

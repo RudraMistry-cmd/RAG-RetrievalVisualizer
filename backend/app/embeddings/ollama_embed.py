@@ -11,6 +11,7 @@ from typing import List
 import requests
 
 from app import config
+from app.inference_queue import inference_queue
 
 
 class EmbeddingError(Exception):
@@ -79,14 +80,10 @@ def _post_embed_legacy(text: str) -> List[float]:
 
 def embed_text(text: str) -> List[float]:
     """Embed a single string (used for the query at retrieval time)."""
-    return _post_embed(text)
+    return inference_queue.run(_post_embed, text)
 
 
-def embed_batch(texts: List[str]) -> List[List[float]]:
-    """Embed multiple strings (used for child chunks at ingestion time).
-    Ollama's /api/embed supports batched input directly; we still fall
-    back to one-by-one if that fails, so a single bad chunk doesn't
-    silently corrupt the whole batch's alignment."""
+def _embed_batch_impl(texts: List[str]) -> List[List[float]]:
     url = f"{config.OLLAMA_BASE_URL}/api/embed"
     try:
         resp = requests.post(
@@ -101,4 +98,10 @@ def embed_batch(texts: List[str]) -> List[List[float]]:
         pass
 
     # Fallback: one request per chunk. Slower but robust.
-    return [embed_text(t) for t in texts]
+    return [_post_embed(t) for t in texts]
+
+
+def embed_batch(texts: List[str]) -> List[List[float]]:
+    """Embed multiple strings (used for child chunks at ingestion time).
+    Serialized through the inference queue to avoid concurrent VRAM use."""
+    return inference_queue.run(_embed_batch_impl, texts)

@@ -46,7 +46,8 @@ def init_db():
             CREATE TABLE IF NOT EXISTS documents (
                 id TEXT PRIMARY KEY,
                 filename TEXT NOT NULL,
-                created_at REAL NOT NULL
+                created_at REAL NOT NULL,
+                session_id TEXT
             );
 
             CREATE TABLE IF NOT EXISTS parents (
@@ -83,6 +84,10 @@ def init_db():
             );
             """
         )
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(documents)").fetchall()]
+        if "session_id" not in cols:
+            conn.execute("ALTER TABLE documents ADD COLUMN session_id TEXT")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_documents_session ON documents(session_id)")
         conn.commit()
     finally:
         conn.close()
@@ -96,12 +101,12 @@ def _unpack_embedding(blob: bytes, dim: int) -> np.ndarray:
     return np.array(struct.unpack(f"{dim}f", blob), dtype=np.float32)
 
 
-def create_document(document_id: str, filename: str):
+def create_document(document_id: str, filename: str, session_id: str = None):
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT INTO documents (id, filename, created_at) VALUES (?, ?, ?)",
-            (document_id, filename, time.time()),
+            "INSERT INTO documents (id, filename, created_at, session_id) VALUES (?, ?, ?, ?)",
+            (document_id, filename, time.time(), session_id),
         )
         conn.commit()
     finally:
@@ -122,12 +127,13 @@ def insert_pages(document_id: str, pages):
         conn.close()
 
 
-def get_document_pages(document_id: str) -> List[dict]:
+def get_document_pages(document_id: str, session_id: str = None) -> List[dict]:
     """Returns every page's extracted text for the extraction preview view."""
     conn = get_connection()
     try:
         doc = conn.execute(
-            "SELECT id FROM documents WHERE id = ?", (document_id,)
+            "SELECT id FROM documents WHERE id = ? AND session_id IS ?",
+            (document_id, session_id),
         ).fetchone()
         if not doc:
             raise ValueError(f"No document with id {document_id}")
@@ -202,19 +208,29 @@ def vector_search(
     document_id: Optional[str],
     query_embedding: List[float],
     top_k: int,
+    session_id: str = None,
 ) -> List[ScoredChild]:
     """Brute-force cosine similarity over the children of a document.
-    Pass document_id=None to search across every stored document.
+    Pass document_id=None to search across every stored document in the session.
     Fine at prototype scale; see module docstring for the reasoning."""
     conn = get_connection()
     try:
-        rows = conn.execute(
-            "SELECT c.id, c.parent_id, c.document_id, c.text, c.page_number, "
-            "       c.embedding, c.embedding_dim, d.filename AS document_filename "
-            "FROM children c JOIN documents d ON d.id = c.document_id "
-            "WHERE (? IS NULL OR c.document_id = ?)",
-            (document_id, document_id),
-        ).fetchall()
+        if session_id is None:
+            rows = conn.execute(
+                "SELECT c.id, c.parent_id, c.document_id, c.text, c.page_number, "
+                "       c.embedding, c.embedding_dim, d.filename AS document_filename "
+                "FROM children c JOIN documents d ON d.id = c.document_id "
+                "WHERE (? IS NULL OR c.document_id = ?) AND d.session_id IS NULL",
+                (document_id, document_id),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT c.id, c.parent_id, c.document_id, c.text, c.page_number, "
+                "       c.embedding, c.embedding_dim, d.filename AS document_filename "
+                "FROM children c JOIN documents d ON d.id = c.document_id "
+                "WHERE (? IS NULL OR c.document_id = ?) AND d.session_id = ?",
+                (document_id, document_id, session_id),
+            ).fetchall()
     finally:
         conn.close()
 
@@ -245,7 +261,7 @@ def vector_search(
     return scored[:top_k]
 
 
-def get_parents_by_ids(parent_ids: List[str]) -> List[dict]:
+def get_parents_by_ids(parent_ids: List[str], session_id: str = None) -> List[dict]:
     """Fetches parents preserving the given id order and de-duplicating
     (a parent may be referenced by multiple selected children)."""
     if not parent_ids:
@@ -260,11 +276,20 @@ def get_parents_by_ids(parent_ids: List[str]) -> List[dict]:
     conn = get_connection()
     try:
         placeholders = ",".join("?" for _ in ordered_unique_ids)
-        rows = conn.execute(
-            f"SELECT id, document_id, text, page_number, chunk_order FROM parents "
-            f"WHERE id IN ({placeholders})",
-            ordered_unique_ids,
-        ).fetchall()
+        if session_id is None:
+            rows = conn.execute(
+                f"SELECT p.id, p.document_id, p.text, p.page_number, p.chunk_order FROM parents p "
+                f"JOIN documents d ON d.id = p.document_id "
+                f"WHERE p.id IN ({placeholders}) AND d.session_id IS NULL",
+                ordered_unique_ids,
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                f"SELECT p.id, p.document_id, p.text, p.page_number, p.chunk_order FROM parents p "
+                f"JOIN documents d ON d.id = p.document_id "
+                f"WHERE p.id IN ({placeholders}) AND d.session_id = ?",
+                [*ordered_unique_ids, session_id],
+            ).fetchall()
     finally:
         conn.close()
 
@@ -272,18 +297,25 @@ def get_parents_by_ids(parent_ids: List[str]) -> List[dict]:
     return [by_id[pid] for pid in ordered_unique_ids if pid in by_id]
 
 
-def get_document(document_id: str) -> Optional[dict]:
+def get_document(document_id: str, session_id: str = None) -> Optional[dict]:
     conn = get_connection()
     try:
-        row = conn.execute(
-            "SELECT id, filename, created_at FROM documents WHERE id = ?", (document_id,)
-        ).fetchone()
+        if session_id is None:
+            row = conn.execute(
+                "SELECT id, filename, created_at FROM documents WHERE id = ? AND session_id IS NULL",
+                (document_id,),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT id, filename, created_at FROM documents WHERE id = ? AND session_id = ?",
+                (document_id, session_id),
+            ).fetchone()
     finally:
         conn.close()
     return dict(row) if row else None
 
 
-def get_documents_by_ids(document_ids) -> List[dict]:
+def get_documents_by_ids(document_ids, session_id: str = None) -> List[dict]:
     """Fetches documents (id, filename) for the given ids — used to resolve
     source filenames when context spans multiple documents."""
     document_ids = [d for d in dict.fromkeys(document_ids) if d]
@@ -292,23 +324,36 @@ def get_documents_by_ids(document_ids) -> List[dict]:
     conn = get_connection()
     try:
         placeholders = ",".join("?" for _ in document_ids)
-        rows = conn.execute(
-            f"SELECT id, filename FROM documents WHERE id IN ({placeholders})",
-            document_ids,
-        ).fetchall()
+        if session_id is None:
+            rows = conn.execute(
+                f"SELECT id, filename FROM documents WHERE id IN ({placeholders}) AND session_id IS NULL",
+                document_ids,
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                f"SELECT id, filename FROM documents WHERE id IN ({placeholders}) AND session_id = ?",
+                [*document_ids, session_id],
+            ).fetchall()
     finally:
         conn.close()
     return [dict(r) for r in rows]
 
 
-def get_document_structure(document_id: str) -> dict:
+def get_document_structure(document_id: str, session_id: str = None) -> dict:
     """Returns the full parent -> children tree for the structure
     visualization view."""
     conn = get_connection()
     try:
-        doc = conn.execute(
-            "SELECT id, filename FROM documents WHERE id = ?", (document_id,)
-        ).fetchone()
+        if session_id is None:
+            doc = conn.execute(
+                "SELECT id, filename FROM documents WHERE id = ? AND session_id IS NULL",
+                (document_id,),
+            ).fetchone()
+        else:
+            doc = conn.execute(
+                "SELECT id, filename FROM documents WHERE id = ? AND session_id = ?",
+                (document_id, session_id),
+            ).fetchone()
         if not doc:
             raise ValueError(f"No document with id {document_id}")
 
@@ -350,25 +395,43 @@ def get_document_structure(document_id: str) -> dict:
     }
 
 
-def list_documents() -> List[dict]:
+def list_documents(session_id: str = None) -> List[dict]:
     conn = get_connection()
     try:
-        rows = conn.execute(
-            "SELECT d.id, d.filename, d.created_at, "
-            "(SELECT COUNT(*) FROM parents WHERE document_id = d.id) as parent_count, "
-            "(SELECT COUNT(*) FROM children WHERE document_id = d.id) as child_count "
-            "FROM documents d ORDER BY d.created_at DESC"
-        ).fetchall()
+        if session_id is None:
+            rows = conn.execute(
+                "SELECT d.id, d.filename, d.created_at, "
+                "(SELECT COUNT(*) FROM parents WHERE document_id = d.id) as parent_count, "
+                "(SELECT COUNT(*) FROM children WHERE document_id = d.id) as child_count "
+                "FROM documents d WHERE d.session_id IS NULL ORDER BY d.created_at DESC"
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT d.id, d.filename, d.created_at, "
+                "(SELECT COUNT(*) FROM parents WHERE document_id = d.id) as parent_count, "
+                "(SELECT COUNT(*) FROM children WHERE document_id = d.id) as child_count "
+                "FROM documents d WHERE d.session_id = ? ORDER BY d.created_at DESC",
+                (session_id,),
+            ).fetchall()
     finally:
         conn.close()
     return [dict(r) for r in rows]
 
 
-def delete_document(document_id: str) -> bool:
+def delete_document(document_id: str, session_id: str = None) -> bool:
     """Removes a document and its chunks (parents/children cascade)."""
     conn = get_connection()
     try:
-        cur = conn.execute("DELETE FROM documents WHERE id = ?", (document_id,))
+        if session_id is None:
+            cur = conn.execute(
+                "DELETE FROM documents WHERE id = ? AND session_id IS NULL",
+                (document_id,),
+            )
+        else:
+            cur = conn.execute(
+                "DELETE FROM documents WHERE id = ? AND session_id = ?",
+                (document_id, session_id),
+            )
         conn.commit()
         return cur.rowcount > 0
     finally:

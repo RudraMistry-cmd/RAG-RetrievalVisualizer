@@ -31,17 +31,21 @@ export default function App() {
     setPipelineState({ query: '', retrieval: null, reranking: null, context: null, generation: null })
   }, [])
 
+  const [docsError, setDocsError] = useState(null)
+
   const refreshDocuments = useCallback(async (selectId = null) => {
     try {
       const list = await api.listDocuments()
       setDocuments(list)
+      setDocsError(null)
       setDocumentId((current) => {
+        if (selectId && list.some((d) => d.id === selectId)) return selectId
         if (selectId) return selectId
-        if (list.some((d) => d.id === current)) return current
+        if (current && list.some((d) => d.id === current)) return current
         return list.length ? list[0].id : null
       })
     } catch (e) {
-      // Backend unreachable — keep whatever we already have.
+      setDocsError(e?.message || 'Could not load documents.')
     }
   }, [])
 
@@ -59,9 +63,10 @@ export default function App() {
     if (inspect) setView('structure')
   }
 
-  const handleIngested = (doc) => {
+  const handleIngested = async (doc) => {
     resetQuery()
-    refreshDocuments(doc.document_id)
+    setDocumentId(doc.document_id)
+    await refreshDocuments(doc.document_id)
     setView('structure')
   }
 
@@ -122,6 +127,12 @@ export default function App() {
       </header>
 
       <div className="content">
+        {docsError && view === 'ingest' && (
+          <div className="error-box" style={{ marginBottom: 16 }}>
+            <span className="stage-tag">documents</span>
+            {docsError}
+          </div>
+        )}
         {view === 'ingest' && (
           <IngestionView
             documents={documents}

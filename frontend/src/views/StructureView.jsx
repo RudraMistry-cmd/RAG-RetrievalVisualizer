@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+﻿import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { api } from '../api/client.js'
 
 export default function StructureView({ documentId }) {
@@ -36,7 +36,7 @@ export default function StructureView({ documentId }) {
   }
 
   if (!structure) {
-    return <div className="loading-text">Loading structure…</div>
+    return <div className="loading-text">Loading structure...</div>
   }
 
   const ocrCount = extraction ? extraction.filter((p) => p.ocr).length : 0
@@ -67,7 +67,7 @@ export default function StructureView({ documentId }) {
         </div>
         <p style={{ color: 'var(--text-dim)', fontSize: 14 }}>
           Exactly what was pulled out of the document: the embedded text layer where available,
-          Tesseract OCR for scanned / image-only pages.
+          Tesseract OCR for scanned or image-only pages.
         </p>
         {extraction && (
           <div className="extraction-list">
@@ -92,8 +92,8 @@ export default function StructureView({ documentId }) {
           <div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
             <div className="modal-head">
               <h3 style={{ margin: 0 }}>{selected.type === 'parent' ? 'Parent Chunk' : 'Child Chunk'}</h3>
-              <button className="secondary" onClick={() => setSelected(null)}>
-                ✕
+              <button className="secondary" onClick={() => setSelected(null)} aria-label="Close">
+                ×
               </button>
             </div>
             <div className="modal-body">

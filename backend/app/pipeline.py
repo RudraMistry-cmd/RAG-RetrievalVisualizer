@@ -28,7 +28,7 @@ from app.generation.llm import generate_answer
 from app import config
 
 
-def ingest_document(file_path: str, filename: str) -> dict:
+def ingest_document(file_path: str, filename: str, session_id: str = None) -> dict:
     """Runs DOCUMENT -> TEXT -> PARENTS -> CHILDREN -> EMBEDDINGS -> STORE."""
     trace = []
 
@@ -60,7 +60,7 @@ def ingest_document(file_path: str, filename: str) -> dict:
     # Stage 4 — STORE: persist document metadata, parent/child chunks, and
     # their vectors in SQLite so retrieval can query them by document_id.
     stamp("store:start")
-    store.create_document(document_id, filename)
+    store.create_document(document_id, filename, session_id=session_id)
     # Stage 4a — persist the raw per-page extraction (text layer and/or OCR)
     # so the UI can preview exactly what was extracted from the document.
     store.insert_pages(document_id, pages)
@@ -81,7 +81,7 @@ def ingest_document(file_path: str, filename: str) -> dict:
     }
 
 
-def stage_retrieve(document_id: Optional[str], query: str, top_k: int = None) -> dict:
+def stage_retrieve(document_id: Optional[str], query: str, top_k: int = None, session_id: str = None) -> dict:
     """Stage: QUERY -> EMBEDDING -> VECTOR SEARCH -> TOP-K
 
     Embeds the user's query, runs a cosine-similarity search over the
@@ -89,10 +89,10 @@ def stage_retrieve(document_id: Optional[str], query: str, top_k: int = None) ->
     document_id selects a single document; None searches all documents.
     """
     if document_id:
-        doc = store.get_document(document_id)
+        doc = store.get_document(document_id, session_id=session_id)
         if not doc:
             raise ValueError(f"No document with id {document_id}")
-    return vector_retrieve(document_id, query, top_k)
+    return vector_retrieve(document_id, query, top_k, session_id=session_id)
 
 
 def stage_rerank(query: str, candidates: list, top_n: int = None) -> dict:
@@ -105,7 +105,7 @@ def stage_rerank(query: str, candidates: list, top_n: int = None) -> dict:
     return rerank_candidates(query, candidates, top_n)
 
 
-def stage_build_context(document_id: Optional[str], selected_children: list) -> dict:
+def stage_build_context(document_id: Optional[str], selected_children: list, session_id: str = None) -> dict:
     """Stage: SELECTED CHILDREN -> PARENT LOOKUP -> DEDUP -> CONTEXT
 
     Maps each selected child back to its parent chunk, collapses duplicate
@@ -114,10 +114,10 @@ def stage_build_context(document_id: Optional[str], selected_children: list) -> 
     block is labelled with its source filename.
     """
     if document_id:
-        doc = store.get_document(document_id)
+        doc = store.get_document(document_id, session_id=session_id)
         if not doc:
             raise ValueError(f"No document with id {document_id}")
-    return build_context(selected_children)
+    return build_context(selected_children, session_id=session_id)
 
 
 def stage_generate(question: str, context: str) -> dict:
@@ -130,16 +130,16 @@ def stage_generate(question: str, context: str) -> dict:
     return {"question": question, "answer": answer, "model": config.LLM_MODEL}
 
 
-def run_full_query(document_id: Optional[str], query: str, top_k: int = None, top_n: int = None) -> dict:
+def run_full_query(document_id: Optional[str], query: str, top_k: int = None, top_n: int = None, session_id: str = None) -> dict:
     """One-shot convenience path running every stage in sequence.
     Returns the full trace so the frontend can render every intermediate
     stage even in 'run all at once' mode."""
     # Stage 1 — embed the query and pull the top-k child chunks from the store.
-    retrieval = stage_retrieve(document_id, query, top_k)
+    retrieval = stage_retrieve(document_id, query, top_k, session_id=session_id)
     # Stage 2 — rerank those candidates with the cross-encoder for precision.
     reranked = stage_rerank(query, retrieval["candidates"], top_n)
     # Stage 3 — resolve the chosen children to their parent chunks and dedupe.
-    context = stage_build_context(document_id, reranked["after"])
+    context = stage_build_context(document_id, reranked["after"], session_id=session_id)
     # Stage 4 — hand the assembled context to the LLM and get the answer.
     generation = stage_generate(query, context["assembled_context"])
 
